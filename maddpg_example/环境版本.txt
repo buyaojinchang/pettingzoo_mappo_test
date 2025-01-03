@@ -1,0 +1,5 @@
+python 3.9 
+numpy 1.26.3 
+pytorch 2.1.2+cu121
+
+Have fun!
