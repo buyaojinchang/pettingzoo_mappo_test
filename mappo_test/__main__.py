@@ -1,6 +1,6 @@
 from pettingzoo.mpe import simple_adversary_v3
 from mappo_agent import Agent
-
+from mappo_agent import Agents
 from mappo_test.mappo_train import MappoTrain
 import torch
 
@@ -27,10 +27,11 @@ CLIP_RANGE = 0.2
 if __name__ == "__main__":
     env = simple_adversary_v3.parallel_env(continuous_actions=True)
     multi_obs, info = env.reset()
-    agents = []
+    agents_list = []
     for agent_i in range(env.num_agents):
-        Agent(env=env, agent_name=env.agents[agent_i], lr_actor=LR_ACTOR, lr_critic=LR_CRITIC,
-              gamma=GAMMA, lam=LAM, clip_range=CLIP_RANGE, hidden_dim=HIDDEN_DIM)
-        agents.append(Agent)    # TODO
+        agent = Agent(env=env, agent_name=env.agents[agent_i], lr_actor=LR_ACTOR, gamma=GAMMA, lam=LAM, clip_range=CLIP_RANGE, hidden_dim=HIDDEN_DIM)
+        print(f"Initializing agent {agent.agent_name}")
+        agents_list.append(agent)    # TODO
+    agents = Agents(agents_list, LR_CRITIC, HIDDEN_DIM)
     train = MappoTrain(env, agents, NUM_EPISODES, BATCH_SIZE, NUM_STEPS)  # TODO
     train.training_loop()
