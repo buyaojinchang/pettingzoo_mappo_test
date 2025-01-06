@@ -67,9 +67,16 @@ class Agent(object):
 class Agents(object):
     def __init__(self,agents_list, lr_critic, hidden_dim):
         self.agents_list = agents_list
+        self.agents_name_list = self.get_agents_name()
         self.lr_critic = lr_critic
         self.state_dim = self.get_state_dim()
         self.critics_list = [Critic(lr_critic, self.state_dim, hidden_dim) for _ in range(len(self.agents_list))]
+
+    def get_agents_name(self):
+        agent_name_list = []
+        for agent_i in self.agents_list:
+            agent_name_list.append(agent_i.agent_name)
+        return agent_name_list
 
     def get_state_dim(self):
         state_dim = 0
