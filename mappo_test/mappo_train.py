@@ -72,7 +72,8 @@ class MappoTrain:
                         obs_dict.update(multi_obs)
 
                         multi_obs, rewards, terminations, truncations, infos = self.env.step(action_dict)
-                        dones = terminations or truncations
+                        dones = any(a or b for a, b in zip(terminations.values(), truncations.values()))
+                        print(f"done {dones}")
                         state = multi_obs_to_state(multi_obs)
 
                         reward_dict.update(rewards)
@@ -89,7 +90,6 @@ class MappoTrain:
                         'next_state_dict' : next_state_record,
                         'next_obs_dict' : next_obs_dict,
                     })
-
 
                     if dones:
                         break
