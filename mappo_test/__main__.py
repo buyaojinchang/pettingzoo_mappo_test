@@ -12,9 +12,11 @@ print(f"Using {device} device")
 
 # Hyper parameters
 NUM_EPISODES = 100
-NUM_STEPS = 25
+NUM_STEPS = 50
 BATCH_SIZE = 512
-K = 4
+CHUNK_SIZE = 25
+MINI_BATCH_SIZE = 64
+K = 8
 
 LR_CRITIC = 0.01
 LR_ACTOR = 0.01
@@ -29,9 +31,10 @@ if __name__ == "__main__":
     multi_obs, info = env.reset()
     agents_list = []
     for agent_i in range(env.num_agents):
-        agent = Agent(env=env, agent_name=env.agents[agent_i], lr_actor=LR_ACTOR, gamma=GAMMA, lam=LAM, clip_range=CLIP_RANGE, hidden_dim=HIDDEN_DIM)
+        agent = Agent(env=env, agent_name=env.agents[agent_i], lr_actor=LR_ACTOR, hidden_dim=HIDDEN_DIM)
         print(f"Initializing agent {agent.agent_name}")
         agents_list.append(agent)    # TODO
     agents = Agents(agents_list, LR_CRITIC, HIDDEN_DIM)
-    train = MappoTrain(env, agents, NUM_EPISODES, BATCH_SIZE, NUM_STEPS)  # TODO
+    train = MappoTrain(env=env, agents=agents, num_episodes=NUM_EPISODES, batch_size=BATCH_SIZE, chunk_size=CHUNK_SIZE, mini_batch_size=MINI_BATCH_SIZE,
+                       num_steps=NUM_STEPS, gamma=GAMMA, lam=LAM, clip_range=CLIP_RANGE)  # TODO
     train.training_loop()

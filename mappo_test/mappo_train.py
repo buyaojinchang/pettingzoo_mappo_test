@@ -1,6 +1,8 @@
 import numpy as np
 import torch
-from torch.distributions import Categorical
+
+from mappo_test.mappo_agent import DataBuffer
+
 
 def multi_obs_to_state(multi_obs_dict):
     state = np.array([])
@@ -15,17 +17,22 @@ def multi_obs_to_obs(multi_obs_dict, agent_name):
 
 
 class MappoTrain:
-    def __init__(self, env, agents, num_episodes, batch_size, num_steps, ):
+    def __init__(self, env, agents, num_episodes, batch_size, chunk_size, mini_batch_size, num_steps, gamma, lam, clip_range):
         self.env = env
         self.agents = agents  # agents类
         self.num_episodes = num_episodes
-        self.batch_size = batch_size
+        self.batch_size = batch_size * (num_steps // chunk_size)
+        self.chunk_size = chunk_size
+        self.mini_batch_size = mini_batch_size * (num_steps // chunk_size)
         self.num_steps = num_steps
         self.num_agents = self.env.num_agents
+        self.gamma = gamma
+        self.lam = lam
+        self.clip_range = clip_range
 
     def training_loop(self):  #训练循环。
         for episode_i in range(self.num_episodes):
-            data_buffer = {}
+            data_buffer = DataBuffer()
             for batch_i in range(self.batch_size):
                 trajectory = []
 
@@ -41,6 +48,7 @@ class MappoTrain:
                     obs_dict = {}
                     h_pi_dict = {}
                     h_v_dict = {}
+                    value_dict = {}
                     log_action_dict = {}
 
                     reward_dict = {}
@@ -57,15 +65,17 @@ class MappoTrain:
                             obs_i_tensor = torch.tensor(obs_i).float()
                             h_pi_i_tensor = torch.tensor(h_pi[agent_i]).float()
                             pi_i, h_pi_out = self.agents.agents_list[agent_i].get_pi_h(obs_i_tensor, h_pi_i_tensor)
-                            raw_action_i = pi_i.sample().squeeze(0)
+                            raw_action_i = pi_i.sample()
                             action_i = torch.sigmoid(raw_action_i)
-                            log_action_i = torch.log(action_i)
+                            clamped_action_i = torch.clamp(action_i, min=1e-8)
+                            log_action_i = torch.log(clamped_action_i)
                             h_v_i_tensor = torch.tensor(h_v[agent_i]).float()
                             state_tensor = torch.tensor(state).float()
                             value_i, h_v_out = self.agents.critics_list[agent_i].forward(state_tensor, h_v_i_tensor)
 
                             h_pi_dict[self.agents.agents_name_list[agent_i]] = h_pi_out.numpy()
                             h_v_dict[self.agents.agents_name_list[agent_i]] = h_v_out.numpy()
+                            value_dict[self.agents.agents_name_list[agent_i]] = value_i.numpy()
                             log_action_dict[self.agents.agents_name_list[agent_i]] = log_action_i.numpy()
                             action_dict[self.agents.agents_name_list[agent_i]] = action_i.numpy()
 
@@ -73,7 +83,6 @@ class MappoTrain:
 
                         multi_obs, rewards, terminations, truncations, infos = self.env.step(action_dict)
                         dones = any(a or b for a, b in zip(terminations.values(), truncations.values()))
-                        print(f"done {dones}")
                         state = multi_obs_to_state(multi_obs)
 
                         reward_dict.update(rewards)
@@ -85,12 +94,126 @@ class MappoTrain:
                         'obs_dict' : obs_dict,
                         'h_pi_dict' : h_pi_dict,
                         'h_v_dict' : h_v_dict,
+                        'value_dict' : value_dict,
                         'log_action_dict' : log_action_dict,
                         'reward_dict' : reward_dict,
                         'next_state_dict' : next_state_record,
                         'next_obs_dict' : next_obs_dict,
+                        'dones' : dones,
                     })
 
                     if dones:
                         break
+
+                # 1. 初始化返回和优势函数
+                advantage_dicts = [{agent: 0.0 for agent in self.agents.agents_name_list} for _ in range(len(trajectory))]
+                return_dicts = [{agent: 0.0 for agent in self.agents.agents_name_list} for _ in range(len(trajectory))]
+                last_advantage = {agent: 0.0 for agent in self.agents.agents_name_list}
+                last_return = {agent: 0.0 for agent in self.agents.agents_name_list}
+
+                # 2. 反向遍历 trajectory
+                for t in reversed(range(len(trajectory))):
+                    reward_dict = trajectory[t]['reward_dict']
+                    value_dict = trajectory[t]['value_dict']
+                    dones = trajectory[t]['dones']
+
+                    next_value_dict = trajectory[t+1]['value_dict'] if t < len(trajectory) - 1 and not dones \
+                        else {agent: 0.0 for agent in self.agents.agents_name_list}
+
+                    for agent in self.agents.agents_name_list:
+                        delta = reward_dict[agent] + self.gamma * next_value_dict[agent] - value_dict[agent]
+
+                        if dones:
+                            last_return[agent] = reward_dict[agent]
+                            last_advantage[agent] = delta
+                        else:
+                            last_return[agent] = reward_dict[agent] + self.gamma * last_return[agent]
+                            last_advantage[agent] = delta + self.gamma * self.lam * last_advantage[agent]
+                        return_dicts[t][agent] = last_return[agent]
+                        advantage_dicts[t][agent] = last_advantage[agent]
+
+                start_idx = 0
+                while start_idx < len(trajectory):
+                    end_idx = start_idx
+                    while end_idx < len(trajectory) and not trajectory[end_idx]['dones']:
+                        end_idx = end_idx + 1
+
+                    for agent in self.agents.agents_name_list:
+                        returns = [return_dicts[t][agent] for t in range(start_idx, end_idx + 1)]
+                        advantages = [advantage_dicts[t][agent] for t in range(start_idx, end_idx + 1)]
+                        mean_return = np.mean(returns)
+                        mean_advantage = np.mean(advantages)
+                        std_return = np.std(returns) + 1e-8
+                        std_advantage = np.std(advantages) + 1e-8
+
+                        for t in range(start_idx, end_idx + 1):
+                            return_dicts[t][agent] = (returns[t] - mean_return) / std_return
+                            advantage_dicts[t][agent] = (advantages[t] - mean_advantage) / std_advantage
+
+                    start_idx = end_idx + 1
+
+                for t in range(len(trajectory)):
+                    trajectory[t]['advantage_dict'] = advantage_dicts[t]
+                    trajectory[t]['return_dict'] = return_dicts[t]
+
+                data_buffer.add_chunk(trajectory, self.chunk_size)
+
+            data_buffer.shuffle()
+            for k in range(self.batch_size//self.mini_batch_size):
+
+                start_idx = k * self.mini_batch_size
+                mini_batch_buffer = data_buffer.sample_minibatch(self.mini_batch_size, start_idx)
+                for agent_i in self.num_agents:
+
+                    for chunk in mini_batch_buffer:
+                        obs_chunk = []
+                        h_pi_chunk = []
+
+                        state_chunk = []
+                        h_v_chunk = []
+
+                        advantage_chunk = []
+                        log_action_chunk = []
+                        for tao in chunk:
+                            obs_train = torch.tensor(tao['obs_dict'][self.agents.agents_name_list[agent_i]], dtype=torch.float)
+                            obs_chunk.append(obs_train)
+
+                            h_pi_train = torch.tensor(tao['h_pi_dict'][self.agents.agents_name_list[agent_i]], dtype=torch.float)
+                            h_pi_chunk.append(h_pi_train)
+
+                            # pi_out, _ = self.agents.agents_list[agent_i].get_pi_h(obs_train, h_pi_train)
+                            # raw_action_out = pi_out.sample().squeeze(0)
+                            # action_out = torch.sigmoid(raw_action_out)
+                            # clamped_action_out = torch.clamp(action_out, min=1e-8)
+                            # log_action_out = torch.log(clamped_action_out)
+                            # ratio = torch.exp(log_action_out - log_action)
+
+                            log_action = torch.tensor(tao['log_action_dict'][self.agents.agents_name_list[agent_i]], dtype=torch.float)
+                            log_action_chunk.append(log_action)
+
+                            advantage_train = torch.tensor(tao['advantage_dict'][self.agents.agents_name_list[agent_i]], dtype=torch.float)
+                            advantage_train_expanded = advantage_train.unsqueeze(0).expand_as(self.agents.agents_list[agent_i].action_dim)
+                            advantage_chunk.append(advantage_train_expanded)
+
+                            state_train = torch.tensor(tao['state'][self.agents.agents_name_list[agent_i]], dtype=torch.float)
+                            state_chunk.append(state_train)
+
+                            h_v_train = torch.tensor(tao['h_v_dict'][self.agents.agents_name_list[agent_i]], dtype=torch.float)
+                            h_v_chunk.append(h_v_train)
+
+                        log_action_chunk_tensor = torch.tensor(log_action_chunk, dtype=torch.float)
+                        pi_out, _ = self.agents.agents_list[agent_i].get_pi_h(obs_chunk, h_pi_chunk)
+                        raw_action_out = pi_out.sample()
+                        action_out = torch.sigmoid(raw_action_out)
+                        clamped_action_out = torch.clamp(action_out, min=1e-8)
+                        log_action_new_chunk = torch.log(clamped_action_out)
+                        log_action_new_chunk_tensor = torch.log(clamped_action_out)
+
+                            # _, _ = self.agents.critics_list[agent_i].forward(state_train, h_v_train)
+
+
+
+
+
+
 

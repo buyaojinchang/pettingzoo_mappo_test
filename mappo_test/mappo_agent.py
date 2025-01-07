@@ -37,15 +37,11 @@ class Critic(nn.Module):
 
 
 class Agent(object):
-    def __init__(self, env, agent_name,lr_actor,
-                 gamma, lam, clip_range, hidden_dim):
+    def __init__(self, env, agent_name,lr_actor, hidden_dim):
         self.env = env
         self.agent_name = agent_name
         self.hidden_dim = hidden_dim
         self.lr_actor = lr_actor
-        self.gamma = gamma
-        self.lam = lam
-        self.clip_range = clip_range
         self.obs_dim = self.get_obs_dim()
         self.action_dim = self.get_action_dim()
         self.actor = Actor(lr_actor=lr_actor, input_dims=self.obs_dim,
@@ -58,9 +54,9 @@ class Agent(object):
         action_dim = self.env.action_spaces[self.agent_name].shape[0]
         return action_dim
     def get_pi_h(self, obs, h_in):
-        single_obs = torch.tensor(data=obs, dtype=torch.float).unsqueeze(0)
-        single_h_in = torch.tensor(data=h_in, dtype=torch.float).unsqueeze(0)
-        mean,std, h_out = self.actor.forward(obs=single_obs, h_in=single_h_in)
+        obs = torch.tensor(data=obs, dtype=torch.float)
+        h_in = torch.tensor(data=h_in, dtype=torch.float)
+        mean,std, h_out = self.actor.forward(obs=obs, h_in=h_in)
         pi = Normal(mean, std)
         return pi, h_out
 
@@ -83,6 +79,26 @@ class Agents(object):
         for agent in self.agents_list:
             state_dim += agent.obs_dim
         return state_dim
+
+class DataBuffer(object):
+    def __init__(self):
+        self.buffer = []
+        self.shuffle_index = []
+
+    def shuffle(self):
+        self.shuffle_index = np.random.permutation(len(self.buffer))
+
+    def sample_minibatch(self, mini_batch_size, start_idx=0):
+        end_idx = min(start_idx + mini_batch_size, len(self.shuffle_index))
+        sampled_indices = self.shuffle_index[start_idx:end_idx]
+        return [self.buffer[i] for i in sampled_indices]
+
+    def add_chunk(self, trajectory, chunk_size):
+        for i in range(0, len(trajectory), chunk_size):
+            self.buffer.append(trajectory[i:i + chunk_size])
+
+
+
 
 
 
