@@ -8,31 +8,33 @@ class Actor(nn.Module):
     def __init__(self, lr_actor, input_dims, hidden_dims, output_dims):
         super(Actor, self).__init__()
         self.fc = nn.Linear(input_dims, hidden_dims)
+        self.relu = nn.ReLU()
         self.rnn = nn.GRUCell(hidden_dims, hidden_dims)
         self.mean_head = nn.Linear(hidden_dims, output_dims)
         self.log_std_head = nn.Linear(hidden_dims, output_dims)
+        self.softplus = nn.Softplus()
         self.optimizer = optim.Adam(self.parameters(), lr=lr_actor)
 
     def forward(self, obs, h_in):
-        x = torch.relu(self.fc(obs))
+        x = self.relu(self.fc(obs))
         h_out = self.rnn(x, h_in)
-        mean = self.mean_head(h_out)
-        log_std_out = self.log_std_head(h_out)
-        std = torch.exp(log_std_out)
+        mean = self.mean_head(self.relu(h_out))
+        std = self.softplus(self.log_std_head(h_out)) + 1e-4
         return mean, std, h_out
 
 class Critic(nn.Module):
     def __init__(self, lr_critic, input_dims, hidden_dims):
         super(Critic, self).__init__()
         self.fc = nn.Linear(input_dims, hidden_dims)
+        self.relu = nn.ReLU()
         self.rnn = nn.GRUCell(hidden_dims, hidden_dims)
         self.pi = nn.Linear(hidden_dims, 1)
         self.optimizer = optim.Adam(self.parameters(), lr=lr_critic)
 
     def forward(self, state, h_in = None):
-        x = torch.relu(self.fc(state))
+        x = self.relu(self.fc(state))
         h_out = self.rnn(x, h_in)
-        value = self.pi(h_out)
+        value = self.pi(self.relu(h_out))
         return value, h_out
 
 

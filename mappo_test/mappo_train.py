@@ -64,7 +64,7 @@ class MappoTrain:
             print(f"Model saved at episode {episode_i}")
 
     def test_model(self, episode_i):
-        if (episode_i + 1) % 100 == 0:
+        if (episode_i + 1) % 10 == 0:
             print("Testing!")
             env = simple_adversary_v3.parallel_env(N=2,
                                                    max_cycles=self.num_steps,  # max steps per episode
@@ -86,8 +86,7 @@ class MappoTrain:
                     multi_obs = multi_next_obs
 
     def save_plt_reward(self):
-        reward_path = os.path.join(self.current_path, "model/" + self.scenario + f'/reward_{self.timestamp}.csv')
-        np.savetxt(reward_path + f'/epi_reward_{self.scenario}_{self.timestamp}.txt', self.episode_rewards)
+        np.savetxt(self.current_path + f'/epi_reward_{self.scenario}_{self.timestamp}.txt', self.episode_rewards)
 
         plt.plot(self.episode_rewards, color='purple', alpha=1)
 
