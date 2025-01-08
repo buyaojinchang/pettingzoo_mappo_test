@@ -70,7 +70,7 @@ class MappoTrain:
                                                    max_cycles=self.num_steps,  # max steps per episode
                                                    continuous_actions=True,
                                                    render_mode="human")
-            for test_epi_i in range(10):
+            for test_epi_i in range(5):
                 multi_obs, others = env.reset()
                 h_pi = [torch.zeros(self.agents.agents_list[i].hidden_dim) for i in range(self.num_agents)]
                 for step_i in range(self.num_steps):
@@ -78,8 +78,8 @@ class MappoTrain:
                     for agent_i, agent_name in enumerate(self.agents.agents_name_list):
                         agent = self.agents.agents_list[agent_i]
                         single_obs = multi_obs[agent_name]
-                        single_pi, h_pi_update = agent.get_pi_h(torch.tensor(single_obs), torch.tensor(h_pi[agent_i])).sample()
-                        single_action = single_pi.sample()  # take action based on obs
+                        single_pi, h_pi_update = agent.get_pi_h(torch.tensor(single_obs), torch.tensor(h_pi[agent_i]))
+                        single_action = torch.sigmoid(single_pi.sample())   # take action based on obs
                         h_pi[agent_i] = h_pi_update
                         multi_action[agent_name] = single_action
                     multi_next_obs, multi_reward, multi_done, multi_truncation, info = env.step(multi_action)
@@ -100,7 +100,7 @@ class MappoTrain:
 
     def training_loop(self):  #训练循环。
         for episode_i in range(self.num_episodes):
-            print(f'Episode {episode_i}')
+            print(f'Episode {episode_i + 1}')
             data_buffer = DataBuffer()
             for batch_i in range(self.batch_size):
                 trajectory = []
@@ -336,7 +336,7 @@ class MappoTrain:
 
                     reward_buffer.append(torch.mean(return_batch_tensor_reshape).item())
 
-            episode_reward = np.sum(reward_buffer) / (self.batch_size//self.mini_batch_size)
+            episode_reward = np.sum(reward_buffer) / (self.batch_size//self.mini_batch_size) * 1e9
             self.episode_rewards.append(episode_reward)
             print(f'episode_reward:{episode_reward}')
 
