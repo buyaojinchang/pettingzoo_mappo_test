@@ -11,7 +11,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Using {device} device")
 
 # Hyper parameters
-NUM_EPISODES = 100
+NUM_EPISODES = 20
 NUM_STEPS = 50
 BATCH_SIZE = 512
 CHUNK_SIZE = 25
@@ -27,7 +27,7 @@ CLIP_RANGE = 0.2
 
 
 if __name__ == "__main__":
-    env = simple_adversary_v3.parallel_env(continuous_actions=True)
+    env = simple_adversary_v3.parallel_env(N=2,continuous_actions=True)
     multi_obs, info = env.reset()
     agents_list = []
     for agent_i in range(env.num_agents):

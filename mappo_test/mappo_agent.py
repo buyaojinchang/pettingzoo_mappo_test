@@ -29,7 +29,7 @@ class Critic(nn.Module):
         self.pi = nn.Linear(hidden_dims, 1)
         self.optimizer = optim.Adam(self.parameters(), lr=lr_critic)
 
-    def forward(self, state, h_in):
+    def forward(self, state, h_in = None):
         x = torch.relu(self.fc(state))
         h_out = self.rnn(x, h_in)
         value = self.pi(h_out)
